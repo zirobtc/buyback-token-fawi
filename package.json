@@ -1,0 +1,25 @@
+{
+  "name": "pump-fun-narrative-tools",
+  "version": "0.1.0",
+  "scripts": {
+    "test:recipients": "ts-node src/scripts/testRecipients.ts",
+    "fetch:holders": "ts-node src/scripts/fetchTopHolders.ts",
+    "test:launch": "ts-node src/scripts/testLaunchToken.ts",
+    "run:distribution": "ts-node src/scripts/runDistribution.ts"
+  },
+  "dependencies": {
+    "@pump-fun/pump-sdk": "^1.24.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.1",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "@types/bs58": "^4.0.4",
+    "@types/node": "^22.9.0",
+    "@types/dotenv": "^8.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
