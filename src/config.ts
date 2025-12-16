@@ -1,8 +1,10 @@
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { getSettings } from "./settings";
 import { loadKeypairFromSecret } from "./utils/solana";
 
-export const RPC_ENDPOINT =
-  process.env.RPC_ENDPOINT ?? "https://api.mainnet-beta.solana.com";
+const settings = getSettings();
+
+export const RPC_ENDPOINT = settings.rpcEndpoint;
 
 export const TOKEN_METADATA = {
   name: process.env.TOKEN_NAME ?? "Narrative Token",
@@ -13,49 +15,64 @@ export const TOKEN_METADATA = {
 };
 
 export const DEFAULT_BUY_LAMPORTS = Math.floor(
-  Number(process.env.DEFAULT_BUY_SOL ?? "1.5") * LAMPORTS_PER_SOL
+  Number(settings.defaults.defaultBuySol ?? "1.5") * LAMPORTS_PER_SOL
 );
 
 export const DEFAULT_SLIPPAGE_BPS = Number(
-  process.env.DEFAULT_SLIPPAGE_BPS ?? "300"
+  settings.defaults.defaultSlippageBps ?? "300"
 );
 
 export const HOLDERS_JSON_PATH =
-  process.env.HOLDERS_JSON_PATH ?? "./holders.json";
+  settings.holders.filePath ?? "./holders.json";
 
 export const MIN_HOLDER_BALANCE_LAMPORTS = Math.floor(
-  Number(process.env.MIN_HOLDER_BALANCE_SOL ?? "5") * LAMPORTS_PER_SOL
+  settings.holders.minHolderBalanceSol * LAMPORTS_PER_SOL
 );
 
 export const MIN_HOLDER_TOKEN_AMOUNT = Number(
-  process.env.MIN_HOLDER_TOKEN_AMOUNT ?? "0"
-);
-
-export const BUYBACK_POLL_INTERVAL_MS = Number(
-  process.env.BUYBACK_POLL_INTERVAL_MS ?? "10000"
-);
-
-export const BUYBACK_TRIGGER_LAMPORTS = Math.floor(
-  Number(process.env.BUYBACK_TRIGGER_SOL ?? "0.1") * LAMPORTS_PER_SOL
-);
-
-export const BUYBACK_SOL_CAP_LAMPORTS = Math.floor(
-  Number(process.env.BUYBACK_SOL_CAP ?? "0.5") * LAMPORTS_PER_SOL
-);
-
-export const DISTRIBUTION_BATCH_SIZE = Number(
-  process.env.DISTRIBUTION_BATCH_SIZE ?? "20"
-);
-
-export const DISTRIBUTION_SLEEP_MS = Number(
-  process.env.DISTRIBUTION_SLEEP_MS ?? "30000"
-);
-
-export const MIN_DISTRIBUTABLE_TOKENS = BigInt(
-  process.env.MIN_DISTRIBUTABLE_TOKENS ?? "1"
+  settings.holders.minHolderTokenAmount
 );
 
 export const DEV_WALLET_SECRET =
-  process.env.DEV_WALLET_SECRET ?? "<paste base58 secret>";
+  settings.wallets.devWalletSecret ?? "<paste base58 secret>";
+
+export const MINT_KEYPAIR_SECRET = settings.wallets.mintKeypairSecret ?? "";
+
+export const TOKENS = settings.holders.tokens;
+
+export const MAX_FETCH_HOLDERS = settings.holders.maxFetchHolders;
+
+export const REFETCH_ALL = settings.holders.refetchAll;
+
+export const HOLDER_BALANCE_BATCH_SIZE = settings.holders.balanceBatchSize;
+export const HOLDER_BALANCE_DELAY_MS = settings.holders.balanceDelayMs;
+
+export const BUYBACK_POLL_INTERVAL_MS = Number(
+  settings.buyback.pollIntervalMs ?? 10000
+);
+
+export const BUYBACK_TRIGGER_LAMPORTS = Math.floor(
+  Number(settings.buyback.triggerSol ?? 0.1) * LAMPORTS_PER_SOL
+);
+
+export const BUYBACK_SOL_CAP_LAMPORTS = Math.floor(
+  Number(settings.buyback.solCap ?? 0.5) * LAMPORTS_PER_SOL
+);
+
+export const DISTRIBUTION_BATCH_SIZE = Number(
+  settings.distribution.batchSize ?? 20
+);
+
+export const DISTRIBUTION_TARGETS = Number(
+  settings.distribution.targetRecipients ?? 1000
+);
+
+export const DISTRIBUTION_FETCH_SIZE = Number(
+  settings.distribution.fetchSize ?? 3000
+);
+
+export const MIN_DISTRIBUTABLE_TOKENS = BigInt(
+  settings.distribution.minDistributableTokens ?? 1
+);
 
 export const loadDevWallet = () => loadKeypairFromSecret(DEV_WALLET_SECRET);

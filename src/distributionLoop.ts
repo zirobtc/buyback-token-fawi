@@ -19,6 +19,8 @@ import {
   BUYBACK_TRIGGER_LAMPORTS,
   DEFAULT_SLIPPAGE_BPS,
   DISTRIBUTION_BATCH_SIZE,
+  DISTRIBUTION_FETCH_SIZE,
+  DISTRIBUTION_TARGETS,
   MIN_HOLDER_BALANCE_LAMPORTS,
   MIN_DISTRIBUTABLE_TOKENS,
   loadDevWallet
@@ -38,16 +40,15 @@ export type DistributionOptions = {
   batchSize?: number;
   pauseSwitch?: PauseSwitch;
   slippageBps?: number;
+  abortSignal?: AbortSignal;
+  maxTargets?: number;
+  recipientFetchSize?: number;
 };
 
 const STATE_PATH =
   process.env.DISTRIBUTION_STATE_PATH ?? "./distribution-state.json";
 const PEEL_LOG_PATH =
   process.env.DISTRIBUTION_PEEL_LOG_PATH ?? "./distribution-peels.log";
-const MAX_TARGETS =
-  Number(process.env.DISTRIBUTION_TARGETS ?? "1000") || 1000;
-const RECIPIENT_FETCH_SIZE =
-  Number(process.env.DISTRIBUTION_FETCH_SIZE ?? "3000") || 3000;
 const MAX_SEND_RETRIES = 3;
 
 type DistributionState = {
@@ -282,7 +283,10 @@ export const runDistributionLoop = async ({
   buybackSolCapLamports = BUYBACK_SOL_CAP_LAMPORTS,
   batchSize = DISTRIBUTION_BATCH_SIZE,
   pauseSwitch = new PauseSwitch(),
-  slippageBps = DEFAULT_SLIPPAGE_BPS
+  slippageBps = DEFAULT_SLIPPAGE_BPS,
+  abortSignal,
+  maxTargets = DISTRIBUTION_TARGETS,
+  recipientFetchSize = DISTRIBUTION_FETCH_SIZE
 }: DistributionOptions) => {
   const conn = connection ?? createConnection();
   const { programId: tokenProgram } = await fetchMintWithProgram(conn, mint);
@@ -302,10 +306,17 @@ export const runDistributionLoop = async ({
   const mintKey = mint.toBase58();
   const sentSet = new Set<string>(state.sent[mintKey] ?? []);
   let cachedFeeEstimate: number | null = null;
+  const shouldAbort = () => abortSignal?.aborted ?? false;
 
   while (true) {
+    if (shouldAbort()) {
+      console.log("[loop] Abort requested, stopping distribution loop.");
+      break;
+    }
+
     if (pauseSwitch.paused) {
       await sleep(1000);
+      if (shouldAbort()) break;
       continue;
     }
 
@@ -441,15 +452,15 @@ export const runDistributionLoop = async ({
     }
 
     console.log(
-      `[distribution] Fetching recipients (maxRecipients=${RECIPIENT_FETCH_SIZE})`
+      `[distribution] Fetching recipients (maxRecipients=${recipientFetchSize})`
     );
     const recipients = await fetchRecipientWallets({
-      maxRecipients: RECIPIENT_FETCH_SIZE,
+      maxRecipients: recipientFetchSize,
       maxHoldersPerToken: 10000,
       connection: conn
     });
     console.log(
-      `[distribution] Loaded ${recipients.length} recipients (fetch_size=${RECIPIENT_FETCH_SIZE})`
+      `[distribution] Loaded ${recipients.length} recipients (fetch_size=${recipientFetchSize})`
     );
     if (recipients.length === 0) {
       console.warn("No recipient wallets found, sleeping...");
@@ -468,16 +479,11 @@ export const runDistributionLoop = async ({
       continue;
     }
 
-    const targetCount = Math.min(
-      eligible.length,
-      MAX_TARGETS,
-      batchSize,
-      recipients.length
-    );
+    const targetCount = Math.min(eligible.length, maxTargets, recipients.length);
     const selected = eligible.slice(0, targetCount);
     const splits = randomSplit(newlyAcquired, selected.length);
     console.log(
-      `[distribution] Selected ${selected.length} recipients for this batch (maxTargets=${MAX_TARGETS}, batchSize=${batchSize})`
+      `[distribution] Selected ${selected.length} recipients for this batch (maxTargets=${maxTargets}, batchSize=${batchSize})`
     );
 
     const pairs = selected
@@ -498,63 +504,70 @@ export const runDistributionLoop = async ({
       `[distribution] Beginning sends with ${availableLamports} lamports available`
     );
 
-    for (const { recipient, amount } of pairs) {
-      if (amount < MIN_DISTRIBUTABLE_TOKENS) continue;
-
-      const peelWallet = Keypair.generate();
+    const sendChunkSize = Math.max(1, batchSize);
+    for (let i = 0; i < pairs.length; i += sendChunkSize) {
+      const chunk = pairs.slice(i, i + sendChunkSize);
       console.log(
-        `[distribution] Created peel ${peelWallet.publicKey.toBase58()} for recipient ${recipient.toBase58()} amount ${amount.toString()}`
+        `[distribution] Sending chunk size=${chunk.length} (chunkSize=${sendChunkSize})`
       );
-      const { instructions, peelAta, recipientAta } = buildDistributionInstructions({
-        devWallet: dev,
-        peelWallet,
-        mint,
-        devAta,
-        recipient,
-        amount,
-        tokenProgram
-      });
+      for (const { recipient, amount } of chunk) {
+        if (amount < MIN_DISTRIBUTABLE_TOKENS) continue;
 
-      try {
-        if (!cachedFeeEstimate) {
-          cachedFeeEstimate = await estimateTxFee(
+        const peelWallet = Keypair.generate();
+        console.log(
+          `[distribution] Created peel ${peelWallet.publicKey.toBase58()} for recipient ${recipient.toBase58()} amount ${amount.toString()}`
+        );
+        const { instructions, peelAta, recipientAta } = buildDistributionInstructions({
+          devWallet: dev,
+          peelWallet,
+          mint,
+          devAta,
+          recipient,
+          amount,
+          tokenProgram
+        });
+
+        try {
+          if (!cachedFeeEstimate) {
+            cachedFeeEstimate = await estimateTxFee(
+              conn,
+              instructions,
+              dev.publicKey,
+              [dev, peelWallet]
+            );
+          }
+          const totalLamportsNeeded = cachedFeeEstimate + minAtaRent * 2;
+          if (availableLamports < totalLamportsNeeded) {
+            console.warn(
+              `Insufficient SOL for peel distribution (need ~${totalLamportsNeeded}, have ${availableLamports}). Skipping ${recipient.toBase58()}`
+            );
+            continue;
+          }
+          availableLamports -= totalLamportsNeeded;
+
+          const { signature } = await sendWithRetry(
             conn,
             instructions,
             dev.publicKey,
-            [dev, peelWallet]
+            [dev, peelWallet],
+            "distribution"
           );
-        }
-        const totalLamportsNeeded = cachedFeeEstimate + minAtaRent * 2;
-        if (availableLamports < totalLamportsNeeded) {
-          console.warn(
-            `Insufficient SOL for peel distribution (need ~${totalLamportsNeeded}, have ${availableLamports}). Skipping ${recipient.toBase58()}`
+          sentSet.add(recipient.toBase58());
+          console.log(
+            `Distributed ${amount.toString()} base units to ${recipient.toBase58()} via peel ${peelWallet.publicKey.toBase58()}, tx ${signature}, remaining lamports ~${availableLamports}`
           );
-          continue;
+          await appendPeelLog({
+            mint: mintKey,
+            recipient: recipient.toBase58(),
+            peel: peelWallet.publicKey.toBase58(),
+            peelAta: peelAta.toBase58(),
+            recipientAta: recipientAta.toBase58(),
+            amount: amount.toString(),
+            tx: signature
+          });
+        } catch (err) {
+          console.error("Distribution transfer failed", err);
         }
-        availableLamports -= totalLamportsNeeded;
-
-        const { signature } = await sendWithRetry(
-          conn,
-          instructions,
-          dev.publicKey,
-          [dev, peelWallet],
-          "distribution"
-        );
-        sentSet.add(recipient.toBase58());
-        console.log(
-          `Distributed ${amount.toString()} base units to ${recipient.toBase58()} via peel ${peelWallet.publicKey.toBase58()}, tx ${signature}, remaining lamports ~${availableLamports}`
-        );
-        await appendPeelLog({
-          mint: mintKey,
-          recipient: recipient.toBase58(),
-          peel: peelWallet.publicKey.toBase58(),
-          peelAta: peelAta.toBase58(),
-          recipientAta: recipientAta.toBase58(),
-          amount: amount.toString(),
-          tx: signature
-        });
-      } catch (err) {
-        console.error("Distribution transfer failed", err);
       }
     }
 

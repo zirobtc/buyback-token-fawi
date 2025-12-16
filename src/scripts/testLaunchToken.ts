@@ -3,6 +3,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 import { createAndBuy } from "../launchToken";
+import { DEFAULT_BUY_LAMPORTS, DEFAULT_SLIPPAGE_BPS } from "../config";
 
 const parseNumber = (value: string | undefined, fallback: number) => {
   const num = value !== undefined ? Number(value) : NaN;
@@ -12,13 +13,13 @@ const parseNumber = (value: string | undefined, fallback: number) => {
 const main = async () => {
   // Prefer explicit TEST_* overrides, then fall back to env defaults, then hard fallback to 0.01 SOL.
   const buySol = parseNumber(
-    process.env.TEST_BUY_SOL ?? process.env.DEFAULT_BUY_SOL,
-    0.01
+    process.env.TEST_BUY_SOL ?? undefined,
+    DEFAULT_BUY_LAMPORTS / LAMPORTS_PER_SOL
   );
-  const slippageEnv = process.env.TEST_SLIPPAGE_BPS ?? process.env.DEFAULT_SLIPPAGE_BPS;
+  const slippageEnv = process.env.TEST_SLIPPAGE_BPS;
   const slippageBps = Number.isFinite(Number(slippageEnv))
     ? Number(slippageEnv)
-    : undefined;
+    : DEFAULT_SLIPPAGE_BPS;
 
   console.log(`Launching token with initial buy of ~${buySol} SOL...`);
   const { signature, mint, devAta } = await createAndBuy({

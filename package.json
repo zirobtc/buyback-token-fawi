@@ -5,7 +5,8 @@
     "test:recipients": "ts-node src/scripts/testRecipients.ts",
     "fetch:holders": "ts-node src/scripts/fetchTopHolders.ts",
     "test:launch": "ts-node src/scripts/testLaunchToken.ts",
-    "run:distribution": "ts-node src/scripts/runDistribution.ts"
+    "run:distribution": "ts-node src/scripts/runDistribution.ts",
+    "start:server": "ts-node src/scripts/server.ts"
   },
   "dependencies": {
     "@pump-fun/pump-sdk": "^1.24.0",

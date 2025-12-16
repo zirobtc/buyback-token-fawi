@@ -3,3 +3,4 @@ dist
 .env
 .DS_Store
 .tsx-tmp
+settings.local.json

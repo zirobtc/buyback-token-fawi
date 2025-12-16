@@ -15,9 +15,10 @@ import {
   Mint
 } from "@solana/spl-token";
 import bs58 from "bs58";
+import { getSettings } from "../settings";
 
 const DEFAULT_RPC_ENDPOINT =
-  process.env.RPC_ENDPOINT ?? "https://api.mainnet-beta.solana.com";
+  getSettings().rpcEndpoint ?? "https://api.mainnet-beta.solana.com";
 
 export const createConnection = (
   endpoint: string = DEFAULT_RPC_ENDPOINT,
